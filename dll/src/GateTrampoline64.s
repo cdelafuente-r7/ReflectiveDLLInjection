@@ -12,10 +12,10 @@ DoSyscall:
   add rsp, 0x40                # restore the stack pointer to the previous stack frame
   mov r11, [rsp+0x10]          # get the pointer to the Syscall structure that has been stored in the shadow space
 
-  mov r10, [r11+0x10]          # store the syscall stub in r10
+  mov r10, [r11+0x10]          # store the syscall stub in r10. Note that the `.pStub` field is padded with 4 null bytes on x64.
   mov [rsp], r10               # place the stub address on the stack, which will be used as return address
 
-  mov rcx, rdx                 # Arg1 is the pointer to the Syscall structure and we don' t need it.
+  mov rcx, rdx                 # Arg1 is the pointer to the Syscall structure and we don't need it.
   mov rdx, r8                  #   We need to shift all the arguments to have the correct arguments for the syscall.
   mov r8, r9                   #   This meens, rdx move to rcx, r8 to rdx, r9 to r8 and first argument on the stack
   mov r9, [rsp+0x30]           #   to r9.

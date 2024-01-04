@@ -21,30 +21,16 @@
 #endif
 
 #define HASH_KEY      13
-#define EXE_PATH_SIZE 256
-
-// Syscalls index in UtilitySyscalls array
-#define NTALLOCATEVIRTUALMEMORY_SYSCALL 0
-#define NTREADVIRTUALMEMORY_SYSCALL     1
-#define NTCLOSE_SYSCALL                 2
-#define NTTERMINATEPROCESS_SYSCALL      3
-#define NTFREEVIRTUALMEMORY_SYSCALL     4
 
 #define KERNEL32DLL_HASH             0x6A4ABC5B
 #define NTDLLDLL_HASH                0x3CFA685D
 
-#define NTREADVIRTUALMEMORY_HASH     0x3AEFA5AA
-#define NTCLOSE_HASH                 0xDCD44C5F
-#define NTTERMINATEPROCESS_HASH      0x7929BBF3
-#define NTFREEVIRTUALMEMORY_HASH     0xDB63B5AB
-#define NTFLUSHINSTRUCTIONCACHE_HASH 0x534C0AB8
-#define NTALLOCATEVIRTUALMEMORY_HASH 0xD33BCABD
-#define NTPROTECTVIRTUALMEMORY_HASH  0x8C394D89
+#define ZWALLOCATEVIRTUALMEMORY_HASH 0xD33D4AED
+#define ZWPROTECTVIRTUALMEMORY_HASH  0xBC3F4D89
+#define ZWFLUSHINSTRUCTIONCACHE_HASH 0x534D8AE8
 
-#define CREATEPROCESSA_HASH          0x16B3FE72 // TODO
-#define GETSYSTEMDIRECTORYA_HASH     0xB8E579C1 // TODO
-#define LOADLIBRARYA_HASH            0xEC0E4E8E // TODO
-#define GETPROCADDRESS_HASH          0x7C0DFCAA // TODO
+#define LOADLIBRARYA_HASH            0xEC0E4E8E
+#define GETPROCADDRESS_HASH          0x7C0DFCAA
 
 //===============================================================================================//
 #pragma intrinsic( _rotr )
@@ -89,31 +75,27 @@ typedef struct {
     DWORD dwCryptedHash;
     DWORD dwNumberOfArgs;
     DWORD dwSyscallNr;
-    BOOL  hooked;
     PVOID pColdGate;
 } Syscall;
 
-#define UTILITY_SYSCALLS_SIZE 5
-typedef struct {
-    Syscall* NtAllocateVirtualMemorySyscall;
-    Syscall* NtReadVirtualMemorySyscall;
-    Syscall* NtCloseSyscall;
-    Syscall* NtTerminateProcessSyscall;
-    Syscall* NtFreeVirtualMemorySyscall;
-} UtilitySyscalls;
-
-// TODO: Ideally, we should separate what is used by ReflectiveLoader.c and by ColdGate.c to avoid dependencies between them.
-//   This would allow the reuse of ColdGate independently for other projects.
 // TODO: Have a custom implementation of these function to avoid using Kernel32 and reduce the dependency issue.
-#define UTILITY_FUNC_NB 4
+#define UTILITY_FUNC_NB 2
 typedef struct {
     // These 2 functions are used by ReflectiveLoader()
     LOADLIBRARYA   pLoadLibraryA;
     GETPROCADDRESS pGetProcAddress;
-    // Thes last 2 function are use during the unhooking process (Freeze technique)
-    GETSYSTEMDIRECTORYA pGetSystemDirectoryA;
-    CREATEPROCESSA pCreateProcessA;
 } UtilityFunctions;
+
+typedef struct {
+    DWORD dwCryptedHash;
+    PVOID pAddress;
+} SYSCALL_ENTRY;
+
+#define MAX_SYSCALLS 600
+typedef struct {
+    DWORD dwCount;
+    SYSCALL_ENTRY Entries[MAX_SYSCALLS];
+} SYSCALL_LIST;
 
 
 // The structure definitions below come from the original ReflectiveLoader.h
@@ -238,7 +220,7 @@ typedef struct __PEB // 65 elements, 0x210 bytes
 
 BOOL findModules(PVOID* pNtdllBase, PVOID* pKernel32);
 BOOL getKernel32Functions(PVOID pNtdllBase, UtilityFunctions* pUtilityFunctions);
-BOOL getSyscalls(PVOID pNtdllBase, Syscall* Syscalls[], DWORD dwNumberOfSyscalls, UtilityFunctions* pUtilityFunctions);
+BOOL getSyscalls(PVOID pNtdllBase, Syscall* Syscalls[], DWORD dwNumberOfSyscalls);
 extern NTSTATUS DoSyscall(VOID);
 
 //
@@ -248,7 +230,3 @@ NTSTATUS rdiNtAllocateVirtualMemory(Syscall* pSyscall, HANDLE hProcess, PVOID* p
 NTSTATUS rdiNtProtectVirtualMemory(Syscall* pSyscall, HANDLE hProcess, PVOID* pBaseAddress, PSIZE_T pNumberOfBytesToProtect, ULONG ulNewAccessProtection, PULONG ulOldAccessProtection);
 NTSTATUS rdiNtFlushInstructionCache(Syscall* pSyscall, HANDLE hProcess, PVOID* pBaseAddress, SIZE_T FlushSize);
 NTSTATUS rdiNtLockVirtualMemory(Syscall* pSyscall, HANDLE hProcess, PVOID* pBaseAddress, PSIZE_T NumberOfBytesToLock, ULONG MapType);
-NTSTATUS rdiNtReadVirtualMemory(Syscall * pSyscall, HANDLE hProcess, PVOID pBaseAddress, PVOID pBuffer, SIZE_T NumberOfBytesToRead, PSIZE_T pNumberOfBytesRead);
-NTSTATUS rdiNtClose(Syscall * pSyscall, HANDLE hProcess);
-NTSTATUS rdiNtTerminateProcess(Syscall * pSyscall, HANDLE hProcess, NTSTATUS ntExitStatus);
-NTSTATUS rdiNtFreeVirtualMemory(Syscall * pSyscall, HANDLE hProcess, PVOID * pBaseAddress, PSIZE_T pRegionSize, ULONG uFreeType);

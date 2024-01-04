@@ -108,15 +108,15 @@ RDIDLLEXPORT ULONG_PTR WINAPI ReflectiveLoader( VOID )
 #else
 	Syscall* Syscalls[3];
 #endif
-	Syscall NtAllocateVirtualMemorySyscall = { NTALLOCATEVIRTUALMEMORY_HASH, 6 };
-	Syscalls[0] = &NtAllocateVirtualMemorySyscall;
-	Syscall NtProtectVirtualMemorySyscall = { NTPROTECTVIRTUALMEMORY_HASH, 5 };
-	Syscalls[1] = &NtProtectVirtualMemorySyscall;
-	Syscall NtFlushInstructionCacheSyscall = { NTFLUSHINSTRUCTIONCACHE_HASH, 3 };
-	Syscalls[2] = &NtFlushInstructionCacheSyscall;
+	Syscall ZwAllocateVirtualMemorySyscall = { ZWALLOCATEVIRTUALMEMORY_HASH, 6 };
+	Syscalls[0] = &ZwAllocateVirtualMemorySyscall;
+	Syscall ZwProtectVirtualMemorySyscall = { ZWPROTECTVIRTUALMEMORY_HASH, 5 };
+	Syscalls[1] = &ZwProtectVirtualMemorySyscall;
+	Syscall ZwFlushInstructionCacheSyscall = { ZWFLUSHINSTRUCTIONCACHE_HASH, 3 };
+	Syscalls[2] = &ZwFlushInstructionCacheSyscall;
 #ifdef ENABLE_STOPPAGING
-	Syscall NtLockVirtualMemorySyscall = { NTLOCKVIRTUALMEMORY_HASH, 4 };
-	Syscalls[3] = &NtLockVirtualMemorySyscall;
+	Syscall ZwLockVirtualMemorySyscall = { ZWLOCKVIRTUALMEMORY_HASH, 4 };
+	Syscalls[3] = &ZwLockVirtualMemorySyscall;
 #endif
 
 
@@ -153,7 +153,7 @@ RDIDLLEXPORT ULONG_PTR WINAPI ReflectiveLoader( VOID )
 
 	getKernel32Functions(pKernel32, &stUtilityFunctions);
 
-	if (!getSyscalls(pNtdllBase, Syscalls, (sizeof(Syscalls) / sizeof(Syscalls[0])), &stUtilityFunctions))
+	if (!getSyscalls(pNtdllBase, Syscalls, (sizeof(Syscalls) / sizeof(Syscalls[0]))))
 		return 0;
 
 
@@ -167,13 +167,13 @@ RDIDLLEXPORT ULONG_PTR WINAPI ReflectiveLoader( VOID )
 	SIZE_T RegionSize = ((PIMAGE_NT_HEADERS)uiHeaderValue)->OptionalHeader.SizeOfImage;
 	uiBaseAddress = (ULONG_PTR) NULL;
 
-	if (rdiNtAllocateVirtualMemory(&NtAllocateVirtualMemorySyscall, (HANDLE)-1, (PVOID*)&uiBaseAddress, (ULONG_PTR)0, &RegionSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE) != 0)
+	if (rdiNtAllocateVirtualMemory(&ZwAllocateVirtualMemorySyscall, (HANDLE)-1, (PVOID*)&uiBaseAddress, (ULONG_PTR)0, &RegionSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE) != 0)
 		return 0;
 
 #ifdef ENABLE_STOPPAGING
 	// prevent our image from being swapped to the pagefile
 	// This fails on Windows Server 2012 with error 0xC00000A1 STATUS_WORKING_SET_QUOTA, but it doesn't seem to be an issue.
-	rdiNtLockVirtualMemory(&NtLockVirtualMemorySyscall, (HANDLE)-1, (PVOID*)&uiBaseAddress, &RegionSize, 1); // MapType 1 = MAP_PROCESS
+	rdiNtLockVirtualMemory(&ZwLockVirtualMemorySyscall, (HANDLE)-1, (PVOID*)&uiBaseAddress, &RegionSize, 1); // MapType 1 = MAP_PROCESS
 #endif
 
 	// we must now copy over the headers
@@ -407,7 +407,7 @@ RDIDLLEXPORT ULONG_PTR WINAPI ReflectiveLoader( VOID )
 		uiValueD = ((PIMAGE_SECTION_HEADER)uiValueA)->SizeOfRawData;
 
 		if (uiValueD)
-			rdiNtProtectVirtualMemory(&NtProtectVirtualMemorySyscall, (HANDLE)-1, (PVOID*)&uiValueB, &uiValueD, dwProtect, &dwProtect);
+			rdiNtProtectVirtualMemory(&ZwProtectVirtualMemorySyscall, (HANDLE)-1, (PVOID*)&uiValueB, &uiValueD, dwProtect, &dwProtect);
 
 		// get the VA of the next section
 		uiValueA += sizeof( IMAGE_SECTION_HEADER );
@@ -420,7 +420,7 @@ RDIDLLEXPORT ULONG_PTR WINAPI ReflectiveLoader( VOID )
 	uiValueA = ( uiBaseAddress + ((PIMAGE_NT_HEADERS)uiHeaderValue)->OptionalHeader.AddressOfEntryPoint );
 
 	// We must flush the instruction cache to avoid stale code being used which was updated by our relocation processing.
-	rdiNtFlushInstructionCache(&NtFlushInstructionCacheSyscall, (HANDLE) -1, NULL, 0);
+	rdiNtFlushInstructionCache(&ZwFlushInstructionCacheSyscall, (HANDLE) -1, NULL, 0);
 
 	// call our respective entry point, fudging our hInstance value
 #ifdef REFLECTIVEDLLINJECTION_VIA_LOADREMOTELIBRARYR

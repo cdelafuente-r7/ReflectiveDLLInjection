@@ -39,7 +39,7 @@ _end:
   pop ebx                          # restore ebx
   pop edi                          # restore edi
 
-  push [eax+0x10]                  # push the syscall stub on the stack
+  push [eax+0x0C]                  # push the syscall stub on the stack
   mov eax, [eax+8]                 # store the syscall number to eax
   ret                              # return to the stub
 
