@@ -55,22 +55,6 @@ __declspec(noinline) ULONG_PTR caller( VOID ) { return (ULONG_PTR)WIN_GET_CALLER
 #define RDIDLLEXPORT DLLEXPORT
 #endif
 
-// When initializing an array using `{0}`, the Windows compiler replaces this statement with the compiler intrinsic function memset to zero out the memory.
-// This is fine in a normal context, but here, it fails with an Access Violation since the compiler intrinsic function contains pointers to undefined memory locations.
-// The reason is because this custom loader lives in a local memory space, any addresses pointing to anything outside of the ".text" section will be wrong.
-// Forcing the use of a non-intrinsic custom version of memset seems to fix this.
-// Note that this doesn' t occur with Mingw and needs to be disabled.
-#ifndef __MINGW32__
-#pragma function(memset)
-void* __cdecl memset(void* s, int c, size_t n)
-{
-	BYTE* buf = (BYTE*)s;
-	while (n--)
-		*buf++ = (BYTE)c;
-	return s;
-}
-#endif
-
 // This is our position independent reflective DLL loader/injector
 #ifdef REFLECTIVEDLLINJECTION_VIA_LOADREMOTELIBRARYR
 RDIDLLEXPORT ULONG_PTR WINAPI ReflectiveLoader( LPVOID lpParameter )
@@ -79,30 +63,10 @@ RDIDLLEXPORT ULONG_PTR WINAPI ReflectiveLoader( VOID )
 #endif
 {
 	// the functions we need
-	UtilityFunctions stUtilityFunctions = { 0 };
+	LOADLIBRARYA pLoadLibraryA     = NULL;
+	GETPROCADDRESS pGetProcAddress = NULL;
 
-	// the initial location of this image in memory
-	ULONG_PTR uiLibraryAddress;
-	// the kernels base address and later this images newly loaded base address
-	ULONG_PTR uiBaseAddress;
-
-	// variables for processing the kernels export table
-	ULONG_PTR uiAddressArray;
-	ULONG_PTR uiNameArray;
-	ULONG_PTR uiExportDir;
-
-	// variables for loading this image
-	ULONG_PTR uiHeaderValue;
-	ULONG_PTR uiValueA;
-	ULONG_PTR uiValueB;
-	ULONG_PTR uiValueC;
-	ULONG_PTR uiValueD;
-	ULONG_PTR uiValueE;
-	DWORD dwProtect;
-
-	PVOID pNtdllBase = NULL, pKernel32 = NULL;
-
-	// The NTDLL exported functions our loader needs. This array of Syscall structures will be completed later.
+	// the system calls our loader needs. This array of Syscall structures will be completed later.
 #ifdef ENABLE_STOPPAGING
 	Syscall* Syscalls[4];
 #else
@@ -118,6 +82,31 @@ RDIDLLEXPORT ULONG_PTR WINAPI ReflectiveLoader( VOID )
 	Syscall ZwLockVirtualMemorySyscall = { ZWLOCKVIRTUALMEMORY_HASH, 4 };
 	Syscalls[3] = &ZwLockVirtualMemorySyscall;
 #endif
+
+	USHORT usCounter;
+
+	// the initial location of this image in memory
+	ULONG_PTR uiLibraryAddress;
+	// the kernels base address and later this images newly loaded base address
+	ULONG_PTR uiBaseAddress;
+    // NTDLL base address to be used to get syscall numbers and trampolins
+	PVOID pNtdllBase = NULL;
+
+	// variables for processing the kernels export table
+	ULONG_PTR uiAddressArray;
+	ULONG_PTR uiNameArray;
+	ULONG_PTR uiExportDir;
+	ULONG_PTR uiNameOrdinals;
+	DWORD dwHashValue;
+
+	// variables for loading this image
+	ULONG_PTR uiHeaderValue;
+	ULONG_PTR uiValueA;
+	ULONG_PTR uiValueB;
+	ULONG_PTR uiValueC;
+	ULONG_PTR uiValueD;
+	ULONG_PTR uiValueE;
+	DWORD dwProtect;
 
 
 	// STEP 0: calculate our images current base address
@@ -147,11 +136,115 @@ RDIDLLEXPORT ULONG_PTR WINAPI ReflectiveLoader( VOID )
 
 
 	// STEP 1: process kernel32 exports for the functions our loader needs and setup the direct syscalls functions
-	findModules(&pNtdllBase, &pKernel32);
-	if (pNtdllBase == NULL || pKernel32 == NULL)
-		return 0;
 
-	getKernel32Functions(pKernel32, &stUtilityFunctions);
+	// get the Process Enviroment Block
+#ifdef _WIN64
+	uiBaseAddress = __readgsqword( 0x60 );
+#else
+#ifdef WIN_ARM
+	uiBaseAddress = *(DWORD *)( (BYTE *)_MoveFromCoprocessor( 15, 0, 13, 0, 2 ) + 0x30 );
+#else // _WIN32
+	uiBaseAddress = __readfsdword( 0x30 );
+#endif
+#endif
+
+	// get the processes loaded modules. ref: http://msdn.microsoft.com/en-us/library/aa813708(VS.85).aspx
+	uiBaseAddress = (ULONG_PTR)((_PPEB)uiBaseAddress)->pLdr;
+
+	// get the first entry of the InMemoryOrder module list
+	uiValueA = (ULONG_PTR)((PPEB_LDR_DATA)uiBaseAddress)->InMemoryOrderModuleList.Flink;
+	while( uiValueA )
+	{
+		// get pointer to current modules name (unicode string)
+		uiValueB = (ULONG_PTR)((PLDR_DATA_TABLE_ENTRY)uiValueA)->BaseDllName.pBuffer;
+		// set bCounter to the length for the loop
+		usCounter = ((PLDR_DATA_TABLE_ENTRY)uiValueA)->BaseDllName.Length;
+		// clear uiValueC which will store the hash of the module name
+		uiValueC = 0;
+
+		// compute the hash of the module name...
+		ULONG_PTR tmpValC = uiValueC;
+		do
+		{
+			tmpValC = ror( (DWORD)tmpValC );
+			// normalize to uppercase if the module name is in lowercase
+			if( *((BYTE *)uiValueB) >= 'a' )
+				tmpValC += *((BYTE *)uiValueB) - 0x20;
+			else
+				tmpValC += *((BYTE *)uiValueB);
+			uiValueB++;
+		} while( --usCounter );
+		uiValueC = tmpValC;
+
+		// compare the hash with that of kernel32.dll
+		if( (DWORD)uiValueC == KERNEL32DLL_HASH )
+		{
+			// get this modules base address
+			uiBaseAddress = (ULONG_PTR)((PLDR_DATA_TABLE_ENTRY)uiValueA)->DllBase;
+
+			// get the VA of the modules NT Header
+			uiExportDir = uiBaseAddress + ((PIMAGE_DOS_HEADER)uiBaseAddress)->e_lfanew;
+
+			// uiNameArray = the address of the modules export directory entry
+			uiNameArray = (ULONG_PTR)&((PIMAGE_NT_HEADERS)uiExportDir)->OptionalHeader.DataDirectory[ IMAGE_DIRECTORY_ENTRY_EXPORT ];
+
+			// get the VA of the export directory
+			uiExportDir = ( uiBaseAddress + ((PIMAGE_DATA_DIRECTORY)uiNameArray)->VirtualAddress );
+
+			// get the VA for the array of name pointers
+			uiNameArray = ( uiBaseAddress + ((PIMAGE_EXPORT_DIRECTORY )uiExportDir)->AddressOfNames );
+
+			// get the VA for the array of name ordinals
+			uiNameOrdinals = ( uiBaseAddress + ((PIMAGE_EXPORT_DIRECTORY )uiExportDir)->AddressOfNameOrdinals );
+
+			usCounter = 2;
+
+			// loop while we still have imports to find
+			while( usCounter > 0 )
+			{
+				// compute the hash values for this function name
+				dwHashValue = _hash( (char *)( uiBaseAddress + DEREF_32( uiNameArray ) )  );
+
+				// if we have found a function we want we get its virtual address
+				if( dwHashValue == LOADLIBRARYA_HASH || dwHashValue == GETPROCADDRESS_HASH )
+				{
+					// get the VA for the array of addresses
+					uiAddressArray = ( uiBaseAddress + ((PIMAGE_EXPORT_DIRECTORY )uiExportDir)->AddressOfFunctions );
+
+					// use this functions name ordinal as an index into the array of name pointers
+					uiAddressArray += ( DEREF_16( uiNameOrdinals ) * sizeof(DWORD) );
+
+					// store this functions VA
+					if( dwHashValue == LOADLIBRARYA_HASH )
+						pLoadLibraryA = (LOADLIBRARYA)( uiBaseAddress + DEREF_32( uiAddressArray ) );
+					else if( dwHashValue == GETPROCADDRESS_HASH )
+						pGetProcAddress = (GETPROCADDRESS)( uiBaseAddress + DEREF_32( uiAddressArray ) );
+
+					// decrement our counter
+					usCounter--;
+				}
+
+				// get the next exported function name
+				uiNameArray += sizeof(DWORD);
+
+				// get the next exported function name ordinal
+				uiNameOrdinals += sizeof(WORD);
+			}
+		}
+		else if( (DWORD)uiValueC == NTDLLDLL_HASH )
+		{
+			// get this modules base address
+			pNtdllBase = ((PLDR_DATA_TABLE_ENTRY)uiValueA)->DllBase;
+		}
+
+		// we stop searching when we have found everything we need.
+		if( pLoadLibraryA && pGetProcAddress )
+			break;
+
+		// get the next entry
+		uiValueA = DEREF( uiValueA );
+	}
+
 
 	if (!getSyscalls(pNtdllBase, Syscalls, (sizeof(Syscalls) / sizeof(Syscalls[0]))))
 		return 0;
@@ -225,7 +318,7 @@ RDIDLLEXPORT ULONG_PTR WINAPI ReflectiveLoader( VOID )
 	while( ((PIMAGE_IMPORT_DESCRIPTOR)uiValueC)->Characteristics )
 	{
 		// use LoadLibraryA to load the imported module into memory
-		uiLibraryAddress = (ULONG_PTR)stUtilityFunctions.pLoadLibraryA( (LPCSTR)( uiBaseAddress + ((PIMAGE_IMPORT_DESCRIPTOR)uiValueC)->Name ) );
+		uiLibraryAddress = (ULONG_PTR)pLoadLibraryA((LPCSTR)(uiBaseAddress + ((PIMAGE_IMPORT_DESCRIPTOR)uiValueC)->Name));
 
 		if ( !uiLibraryAddress )
 		{
@@ -269,7 +362,7 @@ RDIDLLEXPORT ULONG_PTR WINAPI ReflectiveLoader( VOID )
 				uiValueB = ( uiBaseAddress + DEREF(uiValueA) );
 
 				// use GetProcAddress and patch in the address for this imported function
-				DEREF(uiValueA) = (ULONG_PTR)stUtilityFunctions.pGetProcAddress( (HMODULE)uiLibraryAddress, (LPCSTR)((PIMAGE_IMPORT_BY_NAME)uiValueB)->Name );
+				DEREF(uiValueA) = (ULONG_PTR)pGetProcAddress((HMODULE)uiLibraryAddress, (LPCSTR)((PIMAGE_IMPORT_BY_NAME)uiValueB)->Name);
 			}
 			// get the next imported function
 			uiValueA += sizeof( ULONG_PTR );

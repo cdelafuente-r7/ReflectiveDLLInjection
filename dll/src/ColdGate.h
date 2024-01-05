@@ -58,18 +58,8 @@ __forceinline DWORD _hash(char* c)
 typedef LONG NTSTATUS;
 #endif
 
-// These funtions will only be used during the hooking bypass (ColdGate) and only if NtAllocateVirtualMemory is hooked. It will execute it as is, even if it is hooked.
-typedef NTSTATUS(WINAPI* NTALLOCATEVIRTUALMEMORY)(HANDLE, PVOID*, ULONG_PTR, PSIZE_T, ULONG, ULONG);
-typedef NTSTATUS(WINAPI* NTREADVIRTUALMEMORY)(HANDLE, PVOID, PVOID, SIZE_T, PSIZE_T);
-typedef NTSTATUS(WINAPI* NTCLOSE)(HANDLE);
-typedef NTSTATUS(WINAPI* NTTERMINATEPROCESS)(HANDLE, NTSTATUS);
-typedef NTSTATUS(WINAPI* NTFREEVIRTUALMEMORY)(HANDLE, PVOID*, PSIZE_T, ULONG);
-typedef DWORD(NTAPI* NTFLUSHINSTRUCTIONCACHE)(HANDLE, PVOID, ULONG);
-
-typedef BOOL(WINAPI* CREATEPROCESSA)(LPCSTR, LPSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCSTR, LPSTARTUPINFOA, LPPROCESS_INFORMATION); // TODO
-typedef HMODULE(WINAPI* LOADLIBRARYA)(LPCSTR); // TODO
-typedef FARPROC(WINAPI* GETPROCADDRESS)(HMODULE, LPCSTR); // TODO
-typedef UINT(WINAPI* GETSYSTEMDIRECTORYA)(LPSTR lpBuffer, UINT uSize);
+typedef HMODULE(WINAPI* LOADLIBRARYA)(LPCSTR);
+typedef FARPROC(WINAPI* GETPROCADDRESS)(HMODULE, LPCSTR);
 
 typedef struct {
     DWORD dwCryptedHash;
@@ -218,8 +208,6 @@ typedef struct __PEB // 65 elements, 0x210 bytes
 
 //===============================================================================================//
 
-BOOL findModules(PVOID* pNtdllBase, PVOID* pKernel32);
-BOOL getKernel32Functions(PVOID pNtdllBase, UtilityFunctions* pUtilityFunctions);
 BOOL getSyscalls(PVOID pNtdllBase, Syscall* Syscalls[], DWORD dwNumberOfSyscalls);
 extern NTSTATUS DoSyscall(VOID);
 

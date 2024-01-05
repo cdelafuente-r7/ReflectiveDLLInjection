@@ -1,7 +1,4 @@
 #include "ColdGate.h"
-#ifdef _DEBUG
-#include <stdio.h>
-#endif
 
 // Note that compiler optimizations need to be disabled for SyscallStub() and all the rdi...() API functions
 // to make sure the stack is setup in a way that can be handle by DoSyscall() assembly code.
@@ -39,7 +36,6 @@ NTSTATUS rdiNtLockVirtualMemory(Syscall* pSyscall, HANDLE hProcess, PVOID* pBase
 	return SyscallStub(pSyscall, hProcess, pBaseAddress, NumberOfBytesToLock, MapType);
 }
 
-
 #ifdef __MINGW32__
 #pragma GCC pop_options
 #endif
@@ -52,7 +48,6 @@ NTSTATUS rdiNtLockVirtualMemory(Syscall* pSyscall, HANDLE hProcess, PVOID* pBase
 BOOL ExtractSysCallData(PVOID pStub, Syscall *pSyscall) {
 	INT8 cIdxStub = 0, cOffsetStub = 0;
 	PBYTE pbCurrentByte = NULL;
-	//DWORD dSyscallNb = 0;
 
 	if (pStub == NULL || pSyscall == NULL)
 		return FALSE;
@@ -80,7 +75,6 @@ BOOL ExtractSysCallData(PVOID pStub, Syscall *pSyscall) {
 			// 0F 05                      syscall
 			// C3                         retn
 			if (*(PUINT64)(pbCurrentByte + 8) == 0x017ffe03082504f6 && *(PUINT32)(pbCurrentByte + 16) == 0x050f0375 && *(pbCurrentByte + 20) == 0xc3) {
-				//dSyscallNb = *(PDWORD)((PBYTE)pStub + 4 + cIdxStub);
 				cOffsetStub = cIdxStub + 18;
 				break;
 			}
@@ -89,7 +83,6 @@ BOOL ExtractSysCallData(PVOID pStub, Syscall *pSyscall) {
 			// 0F 05                        syscall
 			// C3                           retn
 			if (*(PUINT16)(pbCurrentByte + 8) == 0x050f && *(pbCurrentByte + 10) == 0xc3) {
-				//dSyscallNb = *(PDWORD)((PBYTE)pStub + 4 + cIdxStub);
 				cOffsetStub = cIdxStub + 8;
 				break;
 			}
@@ -147,7 +140,6 @@ BOOL ExtractSysCallData(PVOID pStub, Syscall *pSyscall) {
 				*(PUINT64)(pbCurrentByte + 17) == 0xc2000000c015ff64
 
 				) {
-				//dSyscallNb = *(PDWORD)((PBYTE)pStub + 1 + cIdxStub);
 				cOffsetStub = cIdxStub + 5;
 				break;
 			}
@@ -158,84 +150,11 @@ BOOL ExtractSysCallData(PVOID pStub, Syscall *pSyscall) {
 
 	if (cOffsetStub > 0) {
 		pSyscall->pColdGate = (LPVOID)((PBYTE)pStub + cOffsetStub);
-		//pSyscall->dwSyscallNr = dSyscallNb;
-
 		return TRUE;
 	}
 
 	return FALSE;
 }
-
-//
-// Compute the module name hash
-//
-ULONG_PTR computeModuleHash(PWSTR pBuffer, USHORT usLength) {
-	ULONG_PTR ulHash = 0;
-	ULONG_PTR ulPtr = (ULONG_PTR)pBuffer;
-	USHORT usIndex = usLength;
-
-	do
-	{
-		ulHash = ror((DWORD)ulHash);
-		// normalize to uppercase if the module name is in lowercase
-		if (*((BYTE*)ulPtr) >= 'a')
-			ulHash += *((BYTE*)ulPtr) - 0x20;
-		else
-			ulHash += *((BYTE*)ulPtr);
-		ulPtr++;
-	} while (--usIndex);
-
-	return ulHash;
-}
-
-//
-// Find ntdll and kernel32 module addresses
-//
-BOOL findModules(PVOID *pNtdllBase, PVOID *pKernel32) {
-	_PPEB pPeb = NULL;
-	PPEB_LDR_DATA pLdrData = NULL;
-	PLDR_DATA_TABLE_ENTRY pModuleEntry = NULL, pModuleStart = NULL;
-	PUNICODE_STR pDllName = NULL;
-	ULONG_PTR ulModuleHash = 0;
-
-#ifdef _WIN64
-	pPeb = (_PPEB)__readgsqword(0x60);
-#else
-	pPeb = (_PPEB)__readfsdword(0x30);
-#endif
-
-	pLdrData = pPeb->pLdr;
-	pModuleEntry = pModuleStart = (PLDR_DATA_TABLE_ENTRY)pLdrData->InMemoryOrderModuleList.Flink;
-
-	*pNtdllBase = NULL;
-	*pKernel32 = NULL;
-	do {
-
-		pDllName = &pModuleEntry->BaseDllName;
-
-		if (pDllName->pBuffer == NULL)
-			return FALSE;
-
-		ulModuleHash = computeModuleHash(pDllName->pBuffer, pDllName->Length);
-
-		switch ((DWORD)ulModuleHash) {
-		case NTDLLDLL_HASH:
-			*pNtdllBase = (PVOID)pModuleEntry->DllBase;
-			break;
-		case KERNEL32DLL_HASH:
-			*pKernel32 = (PVOID)pModuleEntry->DllBase;
-		}
-
-		if (*pNtdllBase && *pKernel32)
-			return TRUE;
-
-		pModuleEntry = (PLDR_DATA_TABLE_ENTRY)pModuleEntry->InMemoryOrderModuleList.Flink;
-
-	} while (pModuleEntry != pModuleStart);
-
-	return FALSE;
-}
-
 
 //
 // Retrieve the syscall data for every functions in Syscalls and UtilitySyscalls arrays of Syscall structures.
@@ -301,18 +220,6 @@ BOOL getSyscalls(PVOID pNtdllBase, Syscall* Syscalls[], DWORD dwSyscallSize) {
 		}
 	}
 
-//#ifdef _DEBUG
-//	for (i = 0; i < SyscallList.dwCount; i++) {
-//		Syscall syscallTmp = { 0 };
-//		ExtractSysCallData(SyscallList.Entries[i].pAddress, &syscallTmp);
-//		if (syscallTmp.dwSyscallNr != i)
-//			printf("---- ");
-//		printf("index: 0x%lX, syscall nb: 0x%lX\n", i, syscallTmp.dwSyscallNr);
-//	}
-//
-//	printf("--- OK\n");
-//#endif
-
 	// Find the syscall numbers and trampolins we need
 	for (dwIdxSyscall = 0; dwIdxSyscall < dwSyscallSize; ++dwIdxSyscall) {
 		for (i = 0; i < SyscallList.dwCount; ++i) {
@@ -327,59 +234,9 @@ BOOL getSyscalls(PVOID pNtdllBase, Syscall* Syscalls[], DWORD dwSyscallSize) {
 
 	// Last check to make sure we have everything we need
 	for (dwIdxSyscall = 0; dwIdxSyscall < dwSyscallSize; ++dwIdxSyscall) {
-#ifdef _DEBUG
-		printf("Syscall Nb: 0x%lX\n", Syscalls[dwIdxSyscall]->dwSyscallNr);
-#endif
 		if (Syscalls[dwIdxSyscall]->pColdGate == NULL)
 			return FALSE;
 	}
 
 	return TRUE;
-}
-
-//
-// Go through kernel32 exports and setup the highlevel functions needed for the whole process
-// TODO: add a custom implementation of these functions to avoid a call through kernel32 and reduce the footprint
-//
-BOOL getKernel32Functions(PVOID pKernel32, UtilityFunctions* pUtilityFunctions) {
-	PIMAGE_DOS_HEADER pDosHdr = NULL;
-	PIMAGE_NT_HEADERS pNtHdrs = NULL;
-	PIMAGE_EXPORT_DIRECTORY pExportDir = NULL;
-	PDWORD pdwAddrOfNames = NULL, pdwAddrOfFunctions = NULL;
-	PWORD pwAddrOfNameOrdinales = NULL;
-	DWORD dwIdxfName = 0, dwCounter = 0;
-
-	pDosHdr = (PIMAGE_DOS_HEADER)pKernel32;
-	pNtHdrs = (PIMAGE_NT_HEADERS)((PBYTE)pKernel32 + pDosHdr->e_lfanew);
-	pExportDir = (PIMAGE_EXPORT_DIRECTORY)((PBYTE)pKernel32 + pNtHdrs->OptionalHeader.DataDirectory[0].VirtualAddress);
-
-	pdwAddrOfFunctions = (PDWORD)((PBYTE)pKernel32 + pExportDir->AddressOfFunctions);
-	pdwAddrOfNames = (PDWORD)((PBYTE)pKernel32 + pExportDir->AddressOfNames);
-	pwAddrOfNameOrdinales = (PWORD)((PBYTE)pKernel32 + pExportDir->AddressOfNameOrdinals);
-
-	// Total number of functions needed to process
-	dwCounter = UTILITY_FUNC_NB;
-
-	for (dwIdxfName = 0; dwIdxfName < pExportDir->NumberOfNames; dwIdxfName++) {
-
-		switch (_hash((PCHAR)((PBYTE)pKernel32 + pdwAddrOfNames[dwIdxfName]))) {
-		case LOADLIBRARYA_HASH:
-			pUtilityFunctions->pLoadLibraryA = (LOADLIBRARYA)((PBYTE)pKernel32 + pdwAddrOfFunctions[pwAddrOfNameOrdinales[dwIdxfName]]);
-			--dwCounter;
-			break;
-		case GETPROCADDRESS_HASH:
-			pUtilityFunctions->pGetProcAddress = (GETPROCADDRESS)((PBYTE)pKernel32 + pdwAddrOfFunctions[pwAddrOfNameOrdinales[dwIdxfName]]);
-			--dwCounter;
-			break;
-		}
-
-		if (dwCounter == 0)
-			break;
-	}
-
-	// Last check to make sure we have everything we need
-	if (pUtilityFunctions->pLoadLibraryA && pUtilityFunctions->pGetProcAddress)
-		return TRUE;
-
-	return FALSE;
 }
