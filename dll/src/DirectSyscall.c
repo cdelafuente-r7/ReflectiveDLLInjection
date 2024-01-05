@@ -1,4 +1,4 @@
-#include "ColdGate.h"
+#include "DirectSyscall.h"
 
 // Note that compiler optimizations need to be disabled for SyscallStub() and all the rdi...() API functions
 // to make sure the stack is setup in a way that can be handle by DoSyscall() assembly code.
@@ -149,7 +149,7 @@ BOOL ExtractSysCallData(PVOID pStub, Syscall *pSyscall) {
 	}
 
 	if (cOffsetStub > 0) {
-		pSyscall->pColdGate = (LPVOID)((PBYTE)pStub + cOffsetStub);
+		pSyscall->pStub = (LPVOID)((PBYTE)pStub + cOffsetStub);
 		return TRUE;
 	}
 
@@ -234,7 +234,7 @@ BOOL getSyscalls(PVOID pNtdllBase, Syscall* Syscalls[], DWORD dwSyscallSize) {
 
 	// Last check to make sure we have everything we need
 	for (dwIdxSyscall = 0; dwIdxSyscall < dwSyscallSize; ++dwIdxSyscall) {
-		if (Syscalls[dwIdxSyscall]->pColdGate == NULL)
+		if (Syscalls[dwIdxSyscall]->pStub == NULL)
 			return FALSE;
 	}
 

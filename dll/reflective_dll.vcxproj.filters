@@ -17,7 +17,7 @@
     <ClCompile Include="src\ReflectiveLoader.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\ColdGate.c">
+    <ClCompile Include="src\DirectSyscall.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -28,7 +28,7 @@
     <ClInclude Include="..\common\ReflectiveDLLInjection.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\ColdGate.h">
+    <ClInclude Include="src\DirectSyscall.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

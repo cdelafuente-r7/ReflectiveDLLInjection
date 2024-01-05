@@ -9,7 +9,7 @@ DoSyscall Proc
   add rsp, 40h                 ; restore the stack pointer to the previous stack frame
   mov r11, [rsp+10h]           ; get the pointer to the Syscall structure that has been stored in the shadow space
 
-  mov r10, [r11+10h]           ; store the syscall stub in r10. Note that the `.pColdGate` field is padded with 4 null bytes on x64.
+  mov r10, [r11+10h]           ; store the syscall stub in r10. Note that the `.pStub` field is padded with 4 null bytes on x64.
   mov [rsp], r10               ; place the stub address on the stack, which will be used as return address
 
   mov rcx, rdx                 ; Arg1 is the pointer to the Syscall structure and we don't need it.

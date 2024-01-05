@@ -65,7 +65,7 @@ typedef struct {
     DWORD dwCryptedHash;
     DWORD dwNumberOfArgs;
     DWORD dwSyscallNr;
-    PVOID pColdGate;
+    PVOID pStub;
 } Syscall;
 
 // TODO: Have a custom implementation of these function to avoid using Kernel32 and reduce the dependency issue.

@@ -47,7 +47,7 @@
 #include <intrin.h>
 
 #include "ReflectiveDLLInjection.h"
-#include "ColdGate.h"
+#include "DirectSyscall.h"
 
 // Enable this define to turn on locking of memory to prevent paging
 #define ENABLE_STOPPAGING

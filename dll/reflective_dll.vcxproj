@@ -304,13 +304,13 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="src\ColdGate.c" />
+    <ClCompile Include="src\DirectSyscall.c" />
     <ClCompile Include="src\ReflectiveDll.c" />
     <ClCompile Include="src\ReflectiveLoader.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\common\ReflectiveDLLInjection.h" />
-    <ClInclude Include="src\ColdGate.h" />
+    <ClInclude Include="src\DirectSyscall.h" />
     <ClInclude Include="src\ReflectiveLoader.h" />
   </ItemGroup>
   <ItemGroup>
